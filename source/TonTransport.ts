@@ -9,6 +9,10 @@ const LEDGER_CLA = 0xe0;
 const INS_VERSION = 0x03;
 const INS_ADDRESS = 0x05;
 
+type KnownMessage =
+    | { type: 'comment', text: string }
+    | { type: 'upgrade', queryId: BN | null, gasLimit: BN | null, code: Cell }
+
 export class TonTransport {
     readonly transport: Transport;
 
@@ -146,7 +150,7 @@ export class TonTransport {
             bounce: boolean,
             amount: BN,
             stateInit?: StateInit,
-            payload?: Message
+            payload?: { type: 'custom', message: Message } | KnownMessage
         }
     ) => {
 
@@ -164,57 +168,119 @@ export class TonTransport {
         //
 
         let pkg = Buffer.concat([
-            writeUin8(0), // Header
-            writeUin32(transaction.seqno),
-            writeUin32(transaction.timeout),
-            writeUin64(transaction.amount),
-            writeUin8(transaction.to.workChain === -1 ? 0xff : transaction.to.workChain),
+            writeUint8(0), // Header
+            writeUint32(transaction.seqno),
+            writeUint32(transaction.timeout),
+            writeUint64(transaction.amount),
+            writeUint8(transaction.to.workChain === -1 ? 0xff : transaction.to.workChain),
             transaction.to.hash,
-            writeUin8(transaction.bounce ? 1 : 0),
-            writeUin8(transaction.sendMode),
+            writeUint8(transaction.bounce ? 1 : 0),
+            writeUint8(transaction.sendMode),
         ]);
 
+        //
         // State init
+        //
+
         let stateInit: Cell | null = null;
         if (transaction.stateInit) {
             stateInit = new Cell();
             transaction.stateInit.writeTo(stateInit);
             pkg = Buffer.concat([
                 pkg,
-                writeUin8(1),
-                writeUin16(stateInit.getMaxDepth()),
+                writeUint8(1),
+                writeUint16(stateInit.getMaxDepth()),
                 stateInit.hash()
             ])
         } else {
             pkg = Buffer.concat([
                 pkg,
-                writeUin8(0)
+                writeUint8(0)
             ]);
         }
 
+        //
         // Payload
+        //
+
         let payload: Cell | null = null;
+        let hints: Buffer = Buffer.concat([writeUint8(0)]);
         if (transaction.payload) {
-            payload = new Cell();
-            transaction.payload.writeTo(payload);
+            if (transaction.payload.type === 'comment') {
+                hints = Buffer.concat([
+                    writeUint8(1),
+                    writeUint32(0x00),
+                    writeUint16(Buffer.from(transaction.payload.text).length),
+                    Buffer.from(transaction.payload.text)
+                ]);
+                payload = beginCell()
+                    .storeUint(0, 32)
+                    .storeBuffer(Buffer.from(transaction.payload.text))
+                    .endCell()
+            } else if (transaction.payload.type === 'custom') {
+                payload = new Cell();
+                transaction.payload.message.writeTo(payload);
+            } else if (transaction.payload.type === 'upgrade') {
+                hints = Buffer.concat([
+                    writeUint8(1),
+                    writeUint32(0x01)
+                ]);
+
+
+                // Build cells and hints
+                let b = beginCell()
+                    .storeUint(0xdbfaf817, 32);
+                let d = Buffer.alloc(0);
+
+                // Query ID
+                if (transaction.payload.queryId !== null) {
+                    d = Buffer.concat([d, writeUint8(1), writeUint64(transaction.payload.queryId)]);
+                    b = b.storeUint(transaction.payload.queryId, 64);
+                } else {
+                    d = Buffer.concat([d, writeUint8(0)]);
+                }
+
+                // Gas Limit
+                if (transaction.payload.gasLimit !== null) {
+                    d = Buffer.concat([d, writeUint8(1), writeUint64(transaction.payload.gasLimit)]);
+                    b = b.storeCoins(transaction.payload.gasLimit);
+                } else {
+                    d = Buffer.concat([d, writeUint8(0)]);
+                }
+
+                // Complete
+                d = Buffer.concat([d,
+                    writeUint16(transaction.payload.code.getMaxDepth()),
+                    transaction.payload.code.hash()
+                ]);
+                payload = b.storeRef(transaction.payload.code).endCell();
+                hints = Buffer.concat([
+                    hints,
+                    writeUint16(d.length),
+                    d
+                ])
+            }
+        }
+
+        //
+        // Serialize payload
+        //
+
+        if (payload) {
             pkg = Buffer.concat([
                 pkg,
-                writeUin8(1),
-                writeUin16(payload.getMaxDepth()),
-                payload.hash()
+                writeUint8(1),
+                writeUint16(payload.getMaxDepth()),
+                payload.hash(),
+                hints
             ])
         } else {
             pkg = Buffer.concat([
                 pkg,
-                writeUin8(0)
+                writeUint8(0),
+                writeUint8(0)
             ]);
         }
-
-        // Hints
-        pkg = Buffer.concat([
-            pkg,
-            writeUin8(0)
-        ]);
 
         //
         // Send package
@@ -332,21 +398,21 @@ function pathElementsToBuffer(paths: number[]): Buffer {
     return buffer;
 }
 
-function writeUin32(value: number) {
+function writeUint32(value: number) {
     let b = Buffer.alloc(4);
     b.writeUint32BE(value, 0);
     return b;
 }
-function writeUin16(value: number) {
+function writeUint16(value: number) {
     let b = Buffer.alloc(2);
     b.writeUint16BE(value, 0);
     return b;
 }
-function writeUin64(value: BN) {
+function writeUint64(value: BN) {
     return value.toBuffer('be', 8);
 }
 
-function writeUin8(value: number) {
+function writeUint8(value: number) {
     let b = Buffer.alloc(1);
     b.writeUint8(value, 0);
     return b;
