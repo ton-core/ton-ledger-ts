@@ -12,6 +12,8 @@ const INS_ADDRESS = 0x05;
 type KnownMessage =
     | { type: 'comment', text: string }
     | { type: 'upgrade', queryId: BN | null, gasLimit: BN | null, code: Cell }
+    | { type: 'deposit', queryId: BN | null, gasLimit: BN | null }
+    | { type: 'withdraw', queryId: BN | null, gasLimit: BN | null, amount: BN }
 
 export class TonTransport {
     readonly transport: Transport;
@@ -254,6 +256,77 @@ export class TonTransport {
                     transaction.payload.code.hash()
                 ]);
                 payload = b.storeRef(transaction.payload.code).endCell();
+                hints = Buffer.concat([
+                    hints,
+                    writeUint16(d.length),
+                    d
+                ])
+            } else if (transaction.payload.type === 'deposit') {
+                hints = Buffer.concat([
+                    writeUint8(1),
+                    writeUint32(0x01)
+                ]);
+
+                // Build cells and hints
+                let b = beginCell()
+                    .storeUint(0x7bcd1fef, 32);
+                let d = Buffer.alloc(0);
+
+                // Query ID
+                if (transaction.payload.queryId !== null) {
+                    d = Buffer.concat([d, writeUint8(1), writeUint64(transaction.payload.queryId)]);
+                    b = b.storeUint(transaction.payload.queryId, 64);
+                } else {
+                    d = Buffer.concat([d, writeUint8(0)]);
+                }
+
+                // Gas Limit
+                if (transaction.payload.gasLimit !== null) {
+                    d = Buffer.concat([d, writeUint8(1), writeUint64(transaction.payload.gasLimit)]);
+                    b = b.storeCoins(transaction.payload.gasLimit);
+                } else {
+                    d = Buffer.concat([d, writeUint8(0)]);
+                }
+
+                payload = b.endCell();
+                hints = Buffer.concat([
+                    hints,
+                    writeUint16(d.length),
+                    d
+                ])
+            } else if (transaction.payload.type === 'withdraw') {
+                hints = Buffer.concat([
+                    writeUint8(1),
+                    writeUint32(0x01)
+                ]);
+
+                // Build cells and hints
+                let b = beginCell()
+                    .storeUint(0xda803efd, 32);
+                let d = Buffer.alloc(0);
+
+                // Query ID
+                if (transaction.payload.queryId !== null) {
+                    d = Buffer.concat([d, writeUint8(1), writeUint64(transaction.payload.queryId)]);
+                    b = b.storeUint(transaction.payload.queryId, 64);
+                } else {
+                    d = Buffer.concat([d, writeUint8(0)]);
+                }
+
+                // Gas Limit
+                if (transaction.payload.gasLimit !== null) {
+                    d = Buffer.concat([d, writeUint8(1), writeUint64(transaction.payload.gasLimit)]);
+                    b = b.storeCoins(transaction.payload.gasLimit);
+                } else {
+                    d = Buffer.concat([d, writeUint8(0)]);
+                }
+
+                // Amount
+                d = Buffer.concat([d, writeUint64(transaction.payload.amount)]);
+                b = b.storeCoins(transaction.payload.amount);
+
+                // Complete
+                payload = b.endCell();
                 hints = Buffer.concat([
                     hints,
                     writeUint16(d.length),
