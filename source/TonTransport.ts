@@ -4,6 +4,7 @@ import { Address, beginCell, Cell, contractAddress, Message, SendMode, StateInit
 import { WalletV4Source } from "ton-contracts";
 import { signVerify } from 'ton-crypto';
 
+const LEDGER_SYSTEM = 0xB0;
 const LEDGER_CLA = 0xe0;
 const INS_VERSION = 0x03;
 const INS_ADDRESS = 0x05;
@@ -15,11 +16,43 @@ export class TonTransport {
         this.transport = transport;
     }
 
+    //
+    // Apps
+    //
+
+    async #getCurrentApp(): Promise<{ name: string, version: string }> {
+        let r = await this.transport.send(
+            LEDGER_SYSTEM,
+            0x01,
+            0x00,
+            0x00,
+            undefined,
+            [0x9000]
+        );
+        let data = r.slice(0, r.length - 2);
+        if (data[0] !== 0x01) {
+            throw Error('Invalid response');
+        }
+        let nameLength = data[1];
+        let name = data.slice(2, 2 + nameLength).toString();
+        let versionLength = data[2 + nameLength];
+        let version = data.slice(3 + nameLength, 3 + nameLength + versionLength).toString();
+        return { name, version };
+    }
+
+    async isAppOpen() {
+        return (await this.#getCurrentApp()).name === 'TON';
+    }
+
     async getVersion(): Promise<string> {
         let loaded = await this.#doRequest(INS_VERSION, 0x00, 0x00, Buffer.alloc(0));
         const [major, minor, patch] = loaded;
         return `${major}.${minor}.${patch}`;
     }
+
+    //
+    // Operations
+    //
 
     async getAddress(path: number[], opts?: { testOnly?: boolean, bounceable?: boolean, chain?: number }) {
 
@@ -253,7 +286,7 @@ export class TonTransport {
         let resultCell = new Cell();
         resultCell.bits.writeBuffer(signature);
         resultCell.writeCell(transfer);
-        
+
         return resultCell;
     }
 
