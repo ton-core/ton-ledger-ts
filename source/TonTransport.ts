@@ -14,6 +14,7 @@ type KnownMessage =
     | { type: 'upgrade', queryId: BN | null, gasLimit: BN | null, code: Cell }
     | { type: 'deposit', queryId: BN | null, gasLimit: BN | null }
     | { type: 'withdraw', queryId: BN | null, gasLimit: BN | null, amount: BN }
+    | { type: 'transfer-ownership', queryId: BN | null, address: Address }
 
 export class TonTransport {
     readonly transport: Transport;
@@ -174,8 +175,7 @@ export class TonTransport {
             writeUint32(transaction.seqno),
             writeUint32(transaction.timeout),
             writeUint64(transaction.amount),
-            writeUint8(transaction.to.workChain === -1 ? 0xff : transaction.to.workChain),
-            transaction.to.hash,
+            writeAddress(transaction.to),
             writeUint8(transaction.bounce ? 1 : 0),
             writeUint8(transaction.sendMode),
         ]);
@@ -264,7 +264,7 @@ export class TonTransport {
             } else if (transaction.payload.type === 'deposit') {
                 hints = Buffer.concat([
                     writeUint8(1),
-                    writeUint32(0x01)
+                    writeUint32(0x02)
                 ]);
 
                 // Build cells and hints
@@ -297,7 +297,7 @@ export class TonTransport {
             } else if (transaction.payload.type === 'withdraw') {
                 hints = Buffer.concat([
                     writeUint8(1),
-                    writeUint32(0x01)
+                    writeUint32(0x03)
                 ]);
 
                 // Build cells and hints
@@ -324,6 +324,38 @@ export class TonTransport {
                 // Amount
                 d = Buffer.concat([d, writeUint64(transaction.payload.amount)]);
                 b = b.storeCoins(transaction.payload.amount);
+
+                // Complete
+                payload = b.endCell();
+                hints = Buffer.concat([
+                    hints,
+                    writeUint16(d.length),
+                    d
+                ])
+            } else if (transaction.payload.type === 'transfer-ownership') {
+                hints = Buffer.concat([
+                    writeUint8(1),
+                    writeUint32(0x04)
+                ]);
+
+                // Build cells and hints
+                let b = beginCell()
+                    .storeUint(0x295e75a9, 32);
+                let d = Buffer.alloc(0);
+
+                // Query ID
+                if (transaction.payload.queryId !== null) {
+                    d = Buffer.concat([d, writeUint8(1), writeUint64(transaction.payload.queryId)]);
+                    b = b.storeUint(transaction.payload.queryId, 64);
+                } else {
+                    d = Buffer.concat([d, writeUint8(0)]);
+                }
+
+                // Address
+                d = Buffer.concat([d,
+                    writeAddress(transaction.payload.address),
+                ]);
+                b = b.storeAddress(transaction.payload.address);
 
                 // Complete
                 payload = b.endCell();
@@ -489,4 +521,11 @@ function writeUint8(value: number) {
     let b = Buffer.alloc(1);
     b.writeUint8(value, 0);
     return b;
+}
+
+function writeAddress(address: Address) {
+    return Buffer.concat([
+        writeUint8(address.workChain === -1 ? 0xff : address.workChain),
+        address.hash
+    ]);
 }
