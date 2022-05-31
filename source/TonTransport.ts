@@ -15,6 +15,10 @@ type KnownMessage =
     | { type: 'deposit', queryId: BN | null, gasLimit: BN | null }
     | { type: 'withdraw', queryId: BN | null, gasLimit: BN | null, amount: BN }
     | { type: 'transfer-ownership', queryId: BN | null, address: Address }
+    | { type: 'create-proposal', queryId: BN | null, id: number | null, proposal: Cell, metadata: Cell }
+    | { type: 'vote-proposal', queryId: BN | null, id: number, vote: 'yes' | 'no' | 'abstain' }
+    | { type: 'execute-proposal', queryId: BN | null, id: number }
+    | { type: 'abort-proposal', queryId: BN | null, id: number }
 
 export class TonTransport {
     readonly transport: Transport;
@@ -364,6 +368,154 @@ export class TonTransport {
                     writeUint16(d.length),
                     d
                 ])
+            } else if (transaction.payload.type === 'create-proposal') {
+                hints = Buffer.concat([
+                    writeUint8(1),
+                    writeUint32(0x05)
+                ]);
+
+                // Build cells and hints
+                let b = beginCell()
+                    .storeUint(0xc1387443, 32);
+                let d = Buffer.alloc(0);
+
+                // Query ID
+                if (transaction.payload.queryId !== null) {
+                    d = Buffer.concat([d, writeUint8(1), writeUint64(transaction.payload.queryId)]);
+                    b = b.storeUint(transaction.payload.queryId, 64);
+                } else {
+                    d = Buffer.concat([d, writeUint8(0)]);
+                }
+
+                // Proposal ID
+                if (transaction.payload.id !== null) {
+                    d = Buffer.concat([d, writeUint8(1), writeUint32(transaction.payload.id)]);
+                    b = b.storeUint(transaction.payload.id, 32);
+                } else {
+                    d = Buffer.concat([d, writeUint8(0)]);
+                }
+
+                // Proposal
+                d = Buffer.concat([d,
+                    writeCellRef(transaction.payload.proposal)
+                ]);
+                b = b.storeRef(transaction.payload.proposal);
+
+                // Proposal
+                d = Buffer.concat([d,
+                    writeCellRef(transaction.payload.metadata)
+                ]);
+                b = b.storeRef(transaction.payload.metadata);
+
+                // Complete
+                payload = b.endCell();
+                hints = Buffer.concat([
+                    hints,
+                    writeUint16(d.length),
+                    d
+                ]);
+            } else if (transaction.payload.type === 'vote-proposal') {
+                hints = Buffer.concat([
+                    writeUint8(1),
+                    writeUint32(0x06)
+                ]);
+
+                // Build cells and hints
+                let b = beginCell()
+                    .storeUint(0xb5a563c1, 32);
+                let d = Buffer.alloc(0);
+
+                // Query ID
+                if (transaction.payload.queryId !== null) {
+                    d = Buffer.concat([d, writeUint8(1), writeUint64(transaction.payload.queryId)]);
+                    b = b.storeUint(transaction.payload.queryId, 64);
+                } else {
+                    d = Buffer.concat([d, writeUint8(0)]);
+                }
+
+                // ID
+                d = Buffer.concat([d, writeUint32(transaction.payload.id)]);
+                b = b.storeUint(transaction.payload.id, 32);
+
+                // Vote
+                let voteKey = 0x00;
+                if (transaction.payload.vote === 'yes') {
+                    voteKey = 0x01;
+                } else if (transaction.payload.vote === 'abstain') {
+                    voteKey = 0x02;
+                }
+
+                // Store
+                d = Buffer.concat([d, writeUint8(voteKey)]);
+                b = b.storeUint(voteKey, 2);
+
+                // Complete
+                payload = b.endCell();
+                hints = Buffer.concat([
+                    hints,
+                    writeUint16(d.length),
+                    d
+                ]);
+            } else if (transaction.payload.type === 'execute-proposal') {
+                hints = Buffer.concat([
+                    writeUint8(1),
+                    writeUint32(0x07)
+                ]);
+
+                // Build cells and hints
+                let b = beginCell()
+                    .storeUint(0x93ff9cd3, 32);
+                let d = Buffer.alloc(0);
+
+                // Query ID
+                if (transaction.payload.queryId !== null) {
+                    d = Buffer.concat([d, writeUint8(1), writeUint64(transaction.payload.queryId)]);
+                    b = b.storeUint(transaction.payload.queryId, 64);
+                } else {
+                    d = Buffer.concat([d, writeUint8(0)]);
+                }
+
+                // ID
+                d = Buffer.concat([d, writeUint32(transaction.payload.id)]);
+                b = b.storeUint(transaction.payload.id, 32);
+
+                // Complete
+                payload = b.endCell();
+                hints = Buffer.concat([
+                    hints,
+                    writeUint16(d.length),
+                    d
+                ]);
+            } else if (transaction.payload.type === 'abort-proposal') {
+                hints = Buffer.concat([
+                    writeUint8(1),
+                    writeUint32(0x08)
+                ]);
+
+                // Build cells and hints
+                let b = beginCell()
+                    .storeUint(0x5ce656a5, 32);
+                let d = Buffer.alloc(0);
+
+                // Query ID
+                if (transaction.payload.queryId !== null) {
+                    d = Buffer.concat([d, writeUint8(1), writeUint64(transaction.payload.queryId)]);
+                    b = b.storeUint(transaction.payload.queryId, 64);
+                } else {
+                    d = Buffer.concat([d, writeUint8(0)]);
+                }
+
+                // ID
+                d = Buffer.concat([d, writeUint32(transaction.payload.id)]);
+                b = b.storeUint(transaction.payload.id, 32);
+
+                // Complete
+                payload = b.endCell();
+                hints = Buffer.concat([
+                    hints,
+                    writeUint16(d.length),
+                    d
+                ]);
             }
         }
 
@@ -528,4 +680,11 @@ function writeAddress(address: Address) {
         writeUint8(address.workChain === -1 ? 0xff : address.workChain),
         address.hash
     ]);
+}
+
+function writeCellRef(ref: Cell) {
+    return Buffer.concat([
+        writeUint16(ref.getMaxDepth()),
+        ref.hash()
+    ])
 }

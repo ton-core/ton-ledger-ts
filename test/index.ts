@@ -22,6 +22,9 @@ import { TonTransport } from "../source";
         seqno: 1,
         timeout: Math.floor((Date.now() / 1000) + 60),
         bounce: true,
-        payload: { type: 'upgrade', code: new Cell(), queryId: null, gasLimit: null }
+        // payload: { type: 'create-proposal', id: 1, proposal: new Cell(), metadata: new Cell(), queryId: null }
+        // payload: { type: 'upgrade', code: new Cell(), queryId: null, gasLimit: null }
+        // payload: { type: 'vote-proposal', id: 1, vote: 'abstain', queryId: null }
+        payload: { type: 'abort-proposal', id: 1, queryId: null }
     });
 })();
