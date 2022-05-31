@@ -9,7 +9,8 @@ const LEDGER_CLA = 0xe0;
 const INS_VERSION = 0x03;
 const INS_ADDRESS = 0x05;
 
-type KnownMessage =
+export type TonPayloadFormat =
+    | { type: 'unsafe', message: Message }
     | { type: 'comment', text: string }
     | { type: 'upgrade', queryId: BN | null, gasLimit: BN | null, code: Cell }
     | { type: 'deposit', queryId: BN | null, gasLimit: BN | null }
@@ -157,7 +158,7 @@ export class TonTransport {
             bounce: boolean,
             amount: BN,
             stateInit?: StateInit,
-            payload?: { type: 'custom', message: Message } | KnownMessage
+            payload?: TonPayloadFormat
         }
     ) => {
 
@@ -223,7 +224,7 @@ export class TonTransport {
                     .storeUint(0, 32)
                     .storeBuffer(Buffer.from(transaction.payload.text))
                     .endCell()
-            } else if (transaction.payload.type === 'custom') {
+            } else if (transaction.payload.type === 'unsafe') {
                 payload = new Cell();
                 transaction.payload.message.writeTo(payload);
             } else if (transaction.payload.type === 'upgrade') {

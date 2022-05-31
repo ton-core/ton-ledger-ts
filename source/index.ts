@@ -1,1 +1,1 @@
-export { TonTransport } from './TonTransport';
+export { TonPayloadFormat, TonTransport } from './TonTransport';
