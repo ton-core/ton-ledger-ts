@@ -672,7 +672,7 @@ function writeUint64(value: BN) {
 
 function writeUint8(value: number) {
     let b = Buffer.alloc(1);
-    b.writeUint8(value, 0);
+    b[0] = value;
     return b;
 }
 
