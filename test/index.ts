@@ -25,6 +25,7 @@ import { TonTransport } from "../source";
         // payload: { type: 'create-proposal', id: 1, proposal: new Cell(), metadata: new Cell(), queryId: null }
         // payload: { type: 'upgrade', code: new Cell(), queryId: null, gasLimit: null }
         // payload: { type: 'vote-proposal', id: 1, vote: 'abstain', queryId: null }
-        payload: { type: 'abort-proposal', id: 1, queryId: null }
+        // payload: { type: 'abort-proposal', id: 1, queryId: null }
+        payload: { type: 'change-address', index: 0, address: Address.parse('kQCSct8Hk6AUHlrma5xn_uUsvxPKyVUdEIZAyCzIht3TFTmt'), queryId: null, gasLimit: null }
     });
 })();

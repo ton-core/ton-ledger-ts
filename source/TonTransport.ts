@@ -20,6 +20,7 @@ export type TonPayloadFormat =
     | { type: 'vote-proposal', queryId: BN | null, id: number, vote: 'yes' | 'no' | 'abstain' }
     | { type: 'execute-proposal', queryId: BN | null, id: number }
     | { type: 'abort-proposal', queryId: BN | null, id: number }
+    | { type: 'change-address', queryId: BN | null, gasLimit: BN | null, index: number, address: Address }
 
 export class TonTransport {
     readonly transport: Transport;
@@ -517,6 +518,51 @@ export class TonTransport {
                     writeUint16(d.length),
                     d
                 ]);
+            } else if (transaction.payload.type === 'change-address') {
+                hints = Buffer.concat([
+                    writeUint8(1),
+                    writeUint32(0x09)
+                ]);
+
+                // Build cells and hints
+                let b = beginCell()
+                    .storeUint(0x90eafae1, 32);
+                let d = Buffer.alloc(0);
+
+                // Query ID
+                if (transaction.payload.queryId !== null) {
+                    d = Buffer.concat([d, writeUint8(1), writeUint64(transaction.payload.queryId)]);
+                    b = b.storeUint(transaction.payload.queryId, 64);
+                } else {
+                    d = Buffer.concat([d, writeUint8(0)]);
+                }
+
+                // Gas Limit
+                if (transaction.payload.gasLimit !== null) {
+                    d = Buffer.concat([d, writeUint8(1), writeUint64(transaction.payload.gasLimit)]);
+                    b = b.storeCoins(transaction.payload.gasLimit);
+                } else {
+                    d = Buffer.concat([d, writeUint8(0)]);
+                }
+
+                // Index
+                d = Buffer.concat([d,
+                    writeUint8(transaction.payload.index)]);
+                b = b.storeUint8(transaction.payload.index);
+
+                // Address
+                d = Buffer.concat([d,
+                    writeAddress(transaction.payload.address),
+                ]);
+                b = b.storeAddress(transaction.payload.address);
+
+                // Complete
+                payload = b.endCell();
+                hints = Buffer.concat([
+                    hints,
+                    writeUint16(d.length),
+                    d
+                ])
             }
         }
 
