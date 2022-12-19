@@ -3,6 +3,7 @@ import BN from "bn.js";
 import { Address, beginCell, Cell, contractAddress, Message, SendMode, StateInit } from "ton";
 import { WalletV4Source } from "ton-contracts";
 import { signVerify } from 'ton-crypto';
+import { AsyncLock } from 'teslabot';
 
 const LEDGER_SYSTEM = 0xB0;
 const LEDGER_CLA = 0xe0;
@@ -24,6 +25,7 @@ export type TonPayloadFormat =
 
 export class TonTransport {
     readonly transport: Transport;
+    #lock = new AsyncLock();
 
     constructor(transport: Transport) {
         this.transport = transport;
@@ -34,23 +36,25 @@ export class TonTransport {
     //
 
     async #getCurrentApp(): Promise<{ name: string, version: string }> {
-        let r = await this.transport.send(
-            LEDGER_SYSTEM,
-            0x01,
-            0x00,
-            0x00,
-            undefined,
-            [0x9000]
-        );
-        let data = r.slice(0, r.length - 2);
-        if (data[0] !== 0x01) {
-            throw Error('Invalid response');
-        }
-        let nameLength = data[1];
-        let name = data.slice(2, 2 + nameLength).toString();
-        let versionLength = data[2 + nameLength];
-        let version = data.slice(3 + nameLength, 3 + nameLength + versionLength).toString();
-        return { name, version };
+        return this.#lock.inLock(async () => {
+            let r = await this.transport.send(
+                LEDGER_SYSTEM,
+                0x01,
+                0x00,
+                0x00,
+                undefined,
+                [0x9000]
+            );
+            let data = r.slice(0, r.length - 2);
+            if (data[0] !== 0x01) {
+                throw Error('Invalid response');
+            }
+            let nameLength = data[1];
+            let name = data.slice(2, 2 + nameLength).toString();
+            let versionLength = data[2 + nameLength];
+            let version = data.slice(3 + nameLength, 3 + nameLength + versionLength).toString();
+            return { name, version };
+        });
     }
 
     async isAppOpen() {
@@ -661,14 +665,16 @@ export class TonTransport {
     }
 
     #doRequest = async (ins: number, p1: number, p2: number, data: Buffer) => {
-        let r = await this.transport.send(
-            LEDGER_CLA,
-            ins,
-            p1,
-            p2,
-            data
-        );
-        return r.slice(0, r.length - 2);
+        return this.#lock.inLock(async () => {
+            let r = await this.transport.send(
+                LEDGER_CLA,
+                ins,
+                p1,
+                p2,
+                data
+            );
+            return r.slice(0, r.length - 2);
+        });
     }
 }
 
