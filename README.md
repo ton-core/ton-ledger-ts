@@ -38,12 +38,110 @@ let transport = new TonTransport(device);
 For hardware wallets you need to specify deriviation path of your account for TON it is specified as:
 
 ```typescript
-function pathFromAccountNumber(testnet: boolean, workchain, account: number) {
+function pathForAccount(testnet: boolean, workchain: number, account: number) {
     let network = testnet ? 1 : 0;
     let chain = workchain === -1 ? 255 : 0;
-    return [44, 607, network, chain, account, 0];
+    return [44, 607, network, chain, account, 0]; // Last zero is reserved for alternative wallet contracts
 }
 ```
 
 You can specify any path that starts with `[44, 607]`, but it could be incompatible with other apps.
 
+## Get an Address and Public Key
+
+To get an address without confimration on device you can perform next things:
+
+```typescript
+let testnet = true;
+let workchain = 0;
+let accountIndex = 0;
+let bounceable = false;
+let path = pathForAccount(testnet, workchain, accountIndex);
+let response = await transport.getAddress(path, { chain, bounceable, testOnly: testnet });
+let publiKey: Buffer = response.publicKey;
+let address: string = response.address;
+```
+
+## Validate Address
+
+The same as getting address, but returns address and key only when user confirms that address on the screen is correct. This method usually used after the non-confirming one and displaying address in dApp ad then requesting address validation.
+
+```typescript
+let testnet = true;
+let workchain = 0;
+let accountIndex = 0;
+let bounceable = false;
+let path = pathForAccount(testnet, workchain, accountIndex);
+let response = await transport.validateAddress(path, { chain, bounceable, testOnly: testnet });
+let publiKey: Buffer = response.publicKey;
+let address: string = response.address;
+```
+
+## Sign simple transaction
+
+Ledger Nanoapp works with Wallet v4 for now, we recommend you to continue to use it:
+
+```typescript
+import { WalletV4Contract, WalletV4Source, TonPayloadFormat } from 'ton-contracts';
+import { TonClient, Address, SendMode, toNano } from 'ton';
+
+let client = new TonClient({ endpoint: 'https://toncenter.com/api/v2/jsonRPC' }};
+let source = WalletV4Source.create({ workchain: 0, publicKey: deviceAddress.publicKey });
+let contract = new WalletV4Contract(address, source);
+let seqno = await contract.getSeqNo();
+
+// Parameters
+let path: number[]; // Account path from above
+let to: Address = Address.parse('...'); // Destination
+let amount: BN = toNano('100'); // Send 100 TON
+let sendMode = SendMode.IGNORE_ERRORS | SendMode.PAY_GAS_SEPARATLY;
+let timeout = Math.floor((Date.now() / 1000) + 60);
+let bounce = false;
+let payload: TonPayloadFormat | null = null; // See below
+
+// Signing on device
+let signed = await transport.signTransaction(path, {
+    to,
+    sendMode,
+    amount,
+    seqno,
+    timeout: Math.floor((Date.now() / 1000) + 60),
+    bounce,
+    payload: payload ? payload : undefined
+});
+
+// Send transaction to the network
+await c.sendExternalMessage(contract, signed);
+
+```
+
+## Payload formats
+
+Usually you want to perform transactions with some payload. Ledger's NanoApp currently supports 2 stable commands, all other are outdated or unstable:
+
+### Transaction with a comment
+Comments are limited to ASCII-only symbols and 127 letters. Anything above would be automatically downgraded to Blind Signing Mode that you want to avoid at all cost.
+
+```typescript
+let payload: TonPayloadFormat = {
+    type: 'comment',
+    text: 'Deposit'
+};
+```
+
+### Unsafe with custom payload
+
+This payload allows you to send arbitrary message, this is considered as Blind Signing Mode and only hash of your transaction would be shown to a user.
+
+```typescript
+let cell: Cell = ...
+let message = new CellMessage(cell);
+let payload: TonPayloadFormat = {
+    type: 'unsafe',
+    message
+};
+```
+
+# License
+
+MIT
