@@ -18,7 +18,7 @@
     "ton-contracts": ">=3.1.0"
   },
   "devDependencies": {
-    "@ledgerhq/hw-transport-node-hid-noevents": "^6.27.1",
+    "@ledgerhq/hw-transport-node-hid": "^6.27.1",
     "@types/bn.js": "^5.1.0",
     "@types/node": "^17.0.36",
     "ton": "11.13.0",

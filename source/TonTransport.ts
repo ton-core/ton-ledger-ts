@@ -2,7 +2,7 @@ import Transport from "@ledgerhq/hw-transport";
 import BN from "bn.js";
 import { Address, beginCell, Cell, contractAddress, Message, SendMode, StateInit } from "ton";
 import { WalletV4Source } from "ton-contracts";
-import { signVerify } from 'ton-crypto';
+import { sha256, signVerify } from 'ton-crypto';
 import { AsyncLock } from 'teslabot';
 
 const LEDGER_SYSTEM = 0xB0;
@@ -662,6 +662,33 @@ export class TonTransport {
         resultCell.writeCell(transfer);
 
         return resultCell;
+    }
+
+    signMessage = async (path: number[], text: string) => {
+
+        // Check path
+        validatePath(path);
+
+        //
+        // Fetch key
+        //
+
+        let publicKey = (await this.getAddress(path)).publicKey;
+
+        // Send request
+        let pkg = Buffer.from(text);
+        await this.#doRequest(0x07, 0x00, 0x80, pathElementsToBuffer(path.map((v) => v + 0x80000000)));
+        let res = await this.#doRequest(0x07, 0x01, 0x00, pkg);
+
+        // Check signature
+        let signature = res.slice(1, 1 + 64);
+        let intHash = Buffer.concat([Buffer.from([0x96, 0x89, 0x0e, 0x83]), await sha256(pkg)]);
+        let hash = res.slice(2 + 64, 2 + 64 + 36);
+        if (!signVerify(intHash, signature, publicKey)) {
+            throw Error('Received signature is invalid');
+        }
+
+        return signature;
     }
 
     #doRequest = async (ins: number, p1: number, p2: number, data: Buffer) => {
