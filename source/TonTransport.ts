@@ -1,10 +1,10 @@
 import Transport from "@ledgerhq/hw-transport";
 import BN from "bn.js";
 import { Address, beginCell, Cell, contractAddress, Message, SendMode, StateInit } from "ton";
-import { WalletV4Source } from "ton-contracts";
 import { sha256, signVerify } from 'ton-crypto';
 import { AsyncLock } from 'teslabot';
 import { writeAddress, writeCellRef, writeUint16, writeUint32, writeUint64, writeUint8 } from "./utils/ledgerWriter";
+import { getInit } from "./utils/getInit";
 
 const LEDGER_SYSTEM = 0xB0;
 const LEDGER_CLA = 0xe0;
@@ -107,8 +107,8 @@ export class TonTransport {
         }
 
         // Contract
-        const contract = WalletV4Source.create({ workchain: chain, publicKey: response });
-        const address = contractAddress(contract);
+        const contract = getInit(chain, response);
+        const address = contractAddress({ workchain: chain, initialCode: contract.code, initialData: contract.data });
 
         return { address: address.toFriendly({ bounceable: bounceable, testOnly: test }), publicKey: response };
     }
@@ -148,8 +148,8 @@ export class TonTransport {
         }
 
         // Contract
-        const contract = WalletV4Source.create({ workchain: chain, publicKey: response });
-        const address = contractAddress(contract);
+        const contract = getInit(chain, response);
+        const address = contractAddress({ workchain: chain, initialCode: contract.code, initialData: contract.data });
 
         return { address: address.toFriendly({ bounceable: bounceable, testOnly: test }), publicKey: response };
     }

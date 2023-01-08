@@ -654,11 +654,6 @@
   resolved "https://registry.yarnpkg.com/@ledgerhq/logs/-/logs-6.10.1.tgz#5bd16082261d7364eabb511c788f00937dac588d"
   integrity sha512-z+ILK8Q3y+nfUl43ctCPuR4Y2bIxk/ooCQFwZxhtci1EhAtMDzMAx2W25qx8G1PPL9UUOdnUax19+F0OjXoj4w==
 
-"@openland/patterns@^0.0.2":
-  version "0.0.2"
-  resolved "https://registry.yarnpkg.com/@openland/patterns/-/patterns-0.0.2.tgz#ada0417c4e72aeeb461bf9d8759ecd9ca1ebf51d"
-  integrity sha512-ttgJELwtG8cIER1JeWjkIMg3e+MlAL6n4wFPSNPoBCl+5t3G/HIz9kolvxBmN5/3RXEgh68NnePzGiUBaUHmRQ==
-
 "@scarf/scarf@^1.1.1":
   version "1.1.1"
   resolved "https://registry.yarnpkg.com/@scarf/scarf/-/scarf-1.1.1.tgz#d8b9f20037b3a37dbf8dcdc4b3b72f9285bfce35"
@@ -2782,13 +2777,6 @@ to-regex-range@^5.0.1:
   integrity sha512-65P7iz6X5yEr1cwcgvQxbbIw7Uk3gOy5dIdtZ4rDveLqhrdJP+Li/Hx6tyK0NEb+2GCyneCMJiGqrADCSNk8sQ==
   dependencies:
     is-number "^7.0.0"
-
-ton-contracts@3.1.0:
-  version "3.1.0"
-  resolved "https://registry.yarnpkg.com/ton-contracts/-/ton-contracts-3.1.0.tgz#aba38fe3dfdbd799f5d37a61601916956dfaefff"
-  integrity sha512-nT1CAdKsCS/XA/PMczJOgX42Cr2ZQa4NIwSifbd9M1Ukws4l7VjjFXQYPoWhEb2m43oqZqj3NO8X3WojWvFarA==
-  dependencies:
-    "@openland/patterns" "^0.0.2"
 
 ton-crypto-primitives@2.0.0:
   version "2.0.0"
