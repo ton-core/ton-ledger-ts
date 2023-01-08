@@ -1,5 +1,4 @@
-import BN from "bn.js";
-import { Address, beginCell } from 'ton';
+import { Address, beginCell } from 'ton-core';
 import { writeAddress, writeCellRef, writeUint16, writeUint32, writeUint64, writeUint8 } from "./ledgerWriter";
 
 describe('ledgerWriter', () => {
@@ -18,14 +17,14 @@ describe('ledgerWriter', () => {
         expect(writeUint32(123123123).toString('hex')).toMatchSnapshot();
         expect(writeUint32(4294967295).toString('hex')).toMatchSnapshot();
 
-        expect(writeUint64(new BN('0')).toString('hex')).toMatchSnapshot();
-        expect(writeUint64(new BN('255')).toString('hex')).toMatchSnapshot();
-        expect(writeUint64(new BN('12312')).toString('hex')).toMatchSnapshot();
-        expect(writeUint64(new BN('65535')).toString('hex')).toMatchSnapshot();
-        expect(writeUint64(new BN('123123123')).toString('hex')).toMatchSnapshot();
-        expect(writeUint64(new BN('4294967295')).toString('hex')).toMatchSnapshot();
-        expect(writeUint64(new BN('12312312312312')).toString('hex')).toMatchSnapshot();
-        expect(writeUint64(new BN('18446744073709551615')).toString('hex')).toMatchSnapshot();
+        expect(writeUint64(0n).toString('hex')).toMatchSnapshot();
+        expect(writeUint64(255n).toString('hex')).toMatchSnapshot();
+        expect(writeUint64(12312n).toString('hex')).toMatchSnapshot();
+        expect(writeUint64(65535n).toString('hex')).toMatchSnapshot();
+        expect(writeUint64(123123123n).toString('hex')).toMatchSnapshot();
+        expect(writeUint64(4294967295n).toString('hex')).toMatchSnapshot();
+        expect(writeUint64(12312312312312n).toString('hex')).toMatchSnapshot();
+        expect(writeUint64(18446744073709551615n).toString('hex')).toMatchSnapshot();
     });
     it('should write addresses', () => {
         expect(writeAddress(new Address(0, Buffer.alloc(32))).toString('hex')).toMatchSnapshot();

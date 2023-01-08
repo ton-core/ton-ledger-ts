@@ -1,6 +1,5 @@
 import Transport from "@ledgerhq/hw-transport";
-import BN from "bn.js";
-import { Address, beginCell, Cell, contractAddress, Message, SendMode, StateInit } from "ton";
+import { Address, beginCell, Cell, contractAddress, Message, SendMode, StateInit, storeStateInit } from "ton-core";
 import { sha256, signVerify } from 'ton-crypto';
 import { AsyncLock } from 'teslabot';
 import { writeAddress, writeCellRef, writeUint16, writeUint32, writeUint64, writeUint8 } from "./utils/ledgerWriter";
@@ -12,17 +11,17 @@ const INS_VERSION = 0x03;
 const INS_ADDRESS = 0x05;
 
 export type TonPayloadFormat =
-    | { type: 'unsafe', message: Message }
+    | { type: 'unsafe', message: Cell }
     | { type: 'comment', text: string }
-    | { type: 'upgrade', queryId: BN | null, gasLimit: BN | null, code: Cell }
-    | { type: 'deposit', queryId: BN | null, gasLimit: BN | null }
-    | { type: 'withdraw', queryId: BN | null, gasLimit: BN | null, amount: BN }
-    | { type: 'transfer-ownership', queryId: BN | null, address: Address }
-    | { type: 'create-proposal', queryId: BN | null, id: number | null, proposal: Cell, metadata: Cell }
-    | { type: 'vote-proposal', queryId: BN | null, id: number, vote: 'yes' | 'no' | 'abstain' }
-    | { type: 'execute-proposal', queryId: BN | null, id: number }
-    | { type: 'abort-proposal', queryId: BN | null, id: number }
-    | { type: 'change-address', queryId: BN | null, gasLimit: BN | null, index: number, address: Address }
+    | { type: 'upgrade', queryId: bigint | null, gasLimit: bigint | null, code: Cell }
+    | { type: 'deposit', queryId: bigint | null, gasLimit: bigint | null }
+    | { type: 'withdraw', queryId: bigint | null, gasLimit: bigint | null, amount: bigint }
+    | { type: 'transfer-ownership', queryId: bigint | null, address: Address }
+    | { type: 'create-proposal', queryId: bigint | null, id: number | null, proposal: Cell, metadata: Cell }
+    | { type: 'vote-proposal', queryId: bigint | null, id: number, vote: 'yes' | 'no' | 'abstain' }
+    | { type: 'execute-proposal', queryId: bigint | null, id: number }
+    | { type: 'abort-proposal', queryId: bigint | null, id: number }
+    | { type: 'change-address', queryId: bigint | null, gasLimit: bigint | null, index: number, address: Address }
 
 export class TonTransport {
     readonly transport: Transport;
@@ -108,9 +107,9 @@ export class TonTransport {
 
         // Contract
         const contract = getInit(chain, response);
-        const address = contractAddress({ workchain: chain, initialCode: contract.code, initialData: contract.data });
+        const address = contractAddress(chain, contract);
 
-        return { address: address.toFriendly({ bounceable: bounceable, testOnly: test }), publicKey: response };
+        return { address: address.toString({ bounceable: bounceable, testOnly: test }), publicKey: response };
     }
 
     async validateAddress(path: number[], opts?: { testOnly?: boolean, bounceable?: boolean, chain?: number }) {
@@ -149,9 +148,9 @@ export class TonTransport {
 
         // Contract
         const contract = getInit(chain, response);
-        const address = contractAddress({ workchain: chain, initialCode: contract.code, initialData: contract.data });
+        const address = contractAddress(chain, contract);
 
-        return { address: address.toFriendly({ bounceable: bounceable, testOnly: test }), publicKey: response };
+        return { address: address.toString({ bounceable: bounceable, testOnly: test }), publicKey: response };
     }
 
     signTransaction = async (
@@ -162,7 +161,7 @@ export class TonTransport {
             seqno: number,
             timeout: number,
             bounce: boolean,
-            amount: BN,
+            amount: bigint,
             stateInit?: StateInit,
             payload?: TonPayloadFormat
         }
@@ -197,12 +196,13 @@ export class TonTransport {
 
         let stateInit: Cell | null = null;
         if (transaction.stateInit) {
-            stateInit = new Cell();
-            transaction.stateInit.writeTo(stateInit);
+            stateInit = beginCell()
+                .store(storeStateInit(transaction.stateInit))
+                .endCell();
             pkg = Buffer.concat([
                 pkg,
                 writeUint8(1),
-                writeUint16(stateInit.getMaxDepth()),
+                writeUint16(stateInit.depth()),
                 stateInit.hash()
             ])
         } else {
@@ -231,8 +231,7 @@ export class TonTransport {
                     .storeBuffer(Buffer.from(transaction.payload.text))
                     .endCell()
             } else if (transaction.payload.type === 'unsafe') {
-                payload = new Cell();
-                transaction.payload.message.writeTo(payload);
+                payload = transaction.payload.message;
             } else if (transaction.payload.type === 'upgrade') {
                 hints = Buffer.concat([
                     writeUint8(1),
@@ -263,7 +262,7 @@ export class TonTransport {
 
                 // Complete
                 d = Buffer.concat([d,
-                    writeUint16(transaction.payload.code.getMaxDepth()),
+                    writeUint16(transaction.payload.code.depth()),
                     transaction.payload.code.hash()
                 ]);
                 payload = b.storeRef(transaction.payload.code).endCell();
@@ -553,7 +552,7 @@ export class TonTransport {
                 // Index
                 d = Buffer.concat([d,
                     writeUint8(transaction.payload.index)]);
-                b = b.storeUint8(transaction.payload.index);
+                b = b.storeUint(transaction.payload.index, 8);
 
                 // Address
                 d = Buffer.concat([d,
@@ -579,7 +578,7 @@ export class TonTransport {
             pkg = Buffer.concat([
                 pkg,
                 writeUint8(1),
-                writeUint16(payload.getMaxDepth()),
+                writeUint16(payload.depth()),
                 payload.hash(),
                 hints
             ])
@@ -630,7 +629,7 @@ export class TonTransport {
         // Payload
         if (payload) {
             orderBuilder = orderBuilder
-                .storeBit(true)
+                .storeBit(true) // Always in reference
                 .storeRef(payload)
         } else {
             orderBuilder = orderBuilder
@@ -658,11 +657,10 @@ export class TonTransport {
         }
 
         // Build a message
-        let resultCell = new Cell();
-        resultCell.bits.writeBuffer(signature);
-        resultCell.writeCell(transfer);
-
-        return resultCell;
+        return beginCell()
+            .storeBuffer(signature)
+            .storeSlice(transfer.beginParse())
+            .endCell();
     }
 
     signMessage = async (path: number[], text: string) => {

@@ -82,10 +82,11 @@ let address: string = response.address;
 Ledger Nanoapp works with Wallet v4 for now, we recommend you to continue to use it:
 
 ```typescript
-import { WalletV4Contract, WalletV4Source, TonPayloadFormat } from 'ton-contracts';
-import { TonClient, Address, SendMode, toNano } from 'ton';
+import { WalletV4Contract, WalletV4Source } from 'ton';
+import { TonPayloadFormat } from 'ton-ledger';
+import { TonClient, Address, SendMode, toNano } from 'ton-core';
 
-let client = new TonClient({ endpoint: 'https://toncenter.com/api/v2/jsonRPC' }};
+let client = new TonClient({ endpoint: 'https://toncenter.com/api/v2/jsonRPC' });
 let source = WalletV4Source.create({ workchain: 0, publicKey: deviceAddress.publicKey });
 let contract = new WalletV4Contract(address, source);
 let seqno = await contract.getSeqNo();
@@ -93,7 +94,7 @@ let seqno = await contract.getSeqNo();
 // Parameters
 let path: number[]; // Account path from above
 let to: Address = Address.parse('...'); // Destination
-let amount: BN = toNano('100'); // Send 100 TON
+let amount: bigint = toNano('100'); // Send 100 TON
 let sendMode = SendMode.IGNORE_ERRORS | SendMode.PAY_GAS_SEPARATLY;
 let timeout = Math.floor((Date.now() / 1000) + 60);
 let bounce = false;

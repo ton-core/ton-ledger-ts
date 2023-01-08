@@ -1,5 +1,5 @@
-import { Address, Cell } from 'ton';
-import BN from 'bn.js';
+import { Address, Cell } from 'ton-core';
+import { beginCell } from 'ton-core';
 
 export function writeUint32(value: number) {
     let b = Buffer.alloc(4);
@@ -13,8 +13,8 @@ export function writeUint16(value: number) {
     return b;
 }
 
-export function writeUint64(value: BN) {
-    return value.toBuffer('be', 8);
+export function writeUint64(value: bigint) {
+    return beginCell().storeUint(value, 64).endCell().beginParse().loadBuffer(8);
 }
 
 export function writeUint8(value: number) {
@@ -32,7 +32,7 @@ export function writeAddress(address: Address) {
 
 export function writeCellRef(ref: Cell) {
     return Buffer.concat([
-        writeUint16(ref.getMaxDepth()),
+        writeUint16(ref.depth()),
         ref.hash()
     ])
 }
