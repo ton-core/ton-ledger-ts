@@ -4,6 +4,7 @@ import { Address, beginCell, Cell, contractAddress, Message, SendMode, StateInit
 import { WalletV4Source } from "ton-contracts";
 import { sha256, signVerify } from 'ton-crypto';
 import { AsyncLock } from 'teslabot';
+import { writeAddress, writeCellRef, writeUint16, writeUint32, writeUint64, writeUint8 } from "./utils/ledgerWriter";
 
 const LEDGER_SYSTEM = 0xB0;
 const LEDGER_CLA = 0xe0;
@@ -733,38 +734,4 @@ function pathElementsToBuffer(paths: number[]): Buffer {
         buffer.writeUInt32BE(element, 1 + 4 * index);
     });
     return buffer;
-}
-
-function writeUint32(value: number) {
-    let b = Buffer.alloc(4);
-    b.writeUint32BE(value, 0);
-    return b;
-}
-function writeUint16(value: number) {
-    let b = Buffer.alloc(2);
-    b.writeUint16BE(value, 0);
-    return b;
-}
-function writeUint64(value: BN) {
-    return value.toBuffer('be', 8);
-}
-
-function writeUint8(value: number) {
-    let b = Buffer.alloc(1);
-    b[0] = value;
-    return b;
-}
-
-function writeAddress(address: Address) {
-    return Buffer.concat([
-        writeUint8(address.workChain === -1 ? 0xff : address.workChain),
-        address.hash
-    ]);
-}
-
-function writeCellRef(ref: Cell) {
-    return Buffer.concat([
-        writeUint16(ref.getMaxDepth()),
-        ref.hash()
-    ])
 }

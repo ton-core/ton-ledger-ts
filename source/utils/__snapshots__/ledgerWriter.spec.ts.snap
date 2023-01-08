@@ -1,0 +1,59 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`ledgerWriter should write addresses 1`] = `"000000000000000000000000000000000000000000000000000000000000000000"`;
+
+exports[`ledgerWriter should write addresses 2`] = `"ff0000000000000000000000000000000000000000000000000000000000000000"`;
+
+exports[`ledgerWriter should write addresses 3`] = `"004d55415f2add9082a28be6f66f9f23f9d309a788214fd8048e28013e8369e844"`;
+
+exports[`ledgerWriter should write addresses 4`] = `"ff3b9bbfd0ad5338b9700f0833380ee17d463e51c1ae671ee6f08901bde899b202"`;
+
+exports[`ledgerWriter should write cell refs 1`] = `"000096a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"`;
+
+exports[`ledgerWriter should write cell refs 2`] = `"00003fe93897158698e4d473b74414d7493716b0fc3a70310934873f0019daaccab4"`;
+
+exports[`ledgerWriter should write cell refs 3`] = `"000187ce6f25c20fac56253dc9877fd7f847e286e2e6a4c70d20431e49c8ec12132c"`;
+
+exports[`ledgerWriter should write cell refs 4`] = `"000210a2850c6346ec9b0e909059e0a03a794bb020e13a08d4e941cf36f59ded2951"`;
+
+exports[`ledgerWriter should write ints 1`] = `"00"`;
+
+exports[`ledgerWriter should write ints 2`] = `"0a"`;
+
+exports[`ledgerWriter should write ints 3`] = `"ff"`;
+
+exports[`ledgerWriter should write ints 4`] = `"0000"`;
+
+exports[`ledgerWriter should write ints 5`] = `"00ff"`;
+
+exports[`ledgerWriter should write ints 6`] = `"3018"`;
+
+exports[`ledgerWriter should write ints 7`] = `"ffff"`;
+
+exports[`ledgerWriter should write ints 8`] = `"00000000"`;
+
+exports[`ledgerWriter should write ints 9`] = `"000000ff"`;
+
+exports[`ledgerWriter should write ints 10`] = `"00003018"`;
+
+exports[`ledgerWriter should write ints 11`] = `"0000ffff"`;
+
+exports[`ledgerWriter should write ints 12`] = `"0756b5b3"`;
+
+exports[`ledgerWriter should write ints 13`] = `"ffffffff"`;
+
+exports[`ledgerWriter should write ints 14`] = `"0000000000000000"`;
+
+exports[`ledgerWriter should write ints 15`] = `"00000000000000ff"`;
+
+exports[`ledgerWriter should write ints 16`] = `"0000000000003018"`;
+
+exports[`ledgerWriter should write ints 17`] = `"000000000000ffff"`;
+
+exports[`ledgerWriter should write ints 18`] = `"000000000756b5b3"`;
+
+exports[`ledgerWriter should write ints 19`] = `"00000000ffffffff"`;
+
+exports[`ledgerWriter should write ints 20`] = `"00000b32af0071f8"`;
+
+exports[`ledgerWriter should write ints 21`] = `"ffffffffffffffff"`;
