@@ -26,6 +26,22 @@ function chunks(buf: Buffer, n: number): Buffer[] {
     return cs;
 }
 
+function processAddressFlags(opts?: { testOnly?: boolean, bounceable?: boolean, chain?: number }): { testOnly: boolean, bounceable: boolean, chain: number, flags: number } {
+    const bounceable = opts?.bounceable ?? true;
+    const testOnly = opts?.testOnly ?? false;
+    const chain = opts?.chain ?? 0;
+
+    let flags = 0x00;
+    if (testOnly) {
+        flags |= 0x01;
+    }
+    if (chain === -1) {
+        flags |= 0x02;
+    }
+
+    return { bounceable, testOnly, chain, flags };
+}
+
 export class TonTransport {
     readonly transport: Transport;
     #lock = new AsyncLock();
@@ -80,27 +96,7 @@ export class TonTransport {
         validatePath(path);
 
         // Resolve flags
-        let bounceable = true;
-        let chain = 0;
-        let test = false;
-        let flags = 0x00;
-        if (opts && opts.bounceable !== undefined && !opts.bounceable) {
-            flags |= 0x01;
-            bounceable = false;
-        }
-        if (opts && opts.testOnly) {
-            flags |= 0x02;
-            test = true;
-        }
-        if (opts && opts.chain !== undefined) {
-            if (opts.chain !== 0 && opts.chain !== -1) {
-                throw Error('Invalid chain');
-            }
-            chain = opts.chain;
-            if (opts.chain === -1) {
-                flags |= 0x04;
-            }
-        }
+        const { bounceable, testOnly, chain } = processAddressFlags(opts);
 
         // Get public key
         let response = await this.#doRequest(INS_ADDRESS, 0x00, 0x00, pathElementsToBuffer(path.map((v) => v + 0x80000000)));
@@ -112,7 +108,7 @@ export class TonTransport {
         const contract = getInit(chain, response);
         const address = contractAddress(chain, contract);
 
-        return { address: address.toString({ bounceable: bounceable, testOnly: test }), publicKey: response };
+        return { address: address.toString({ bounceable, testOnly }), publicKey: response };
     }
 
     async validateAddress(path: number[], opts?: { testOnly?: boolean, bounceable?: boolean, chain?: number }) {
@@ -121,27 +117,7 @@ export class TonTransport {
         validatePath(path);
 
         // Resolve flags
-        let bounceable = true;
-        let chain = 0;
-        let test = false;
-        let flags = 0x00;
-        if (opts && opts.bounceable !== undefined && !opts.bounceable) {
-            flags |= 0x01;
-            bounceable = false;
-        }
-        if (opts && opts.testOnly) {
-            flags |= 0x02;
-            test = true;
-        }
-        if (opts && opts.chain !== undefined) {
-            if (opts.chain !== 0 && opts.chain !== -1) {
-                throw Error('Invalid chain');
-            }
-            chain = opts.chain;
-            if (opts.chain === -1) {
-                flags |= 0x04;
-            }
-        }
+        const { bounceable, testOnly, chain, flags } = processAddressFlags(opts);
 
         // Get public key
         let response = await this.#doRequest(INS_ADDRESS, 0x01, flags, pathElementsToBuffer(path.map((v) => v + 0x80000000)));
@@ -153,7 +129,7 @@ export class TonTransport {
         const contract = getInit(chain, response);
         const address = contractAddress(chain, contract);
 
-        return { address: address.toString({ bounceable: bounceable, testOnly: test }), publicKey: response };
+        return { address: address.toString({ bounceable, testOnly }), publicKey: response };
     }
 
     async getAddressProof(path: number[], params: { domain: string, timestamp: number, payload: Buffer }, opts?: { testOnly?: boolean, bounceable?: boolean, chain?: number }) {
@@ -164,27 +140,7 @@ export class TonTransport {
         let publicKey = (await this.getAddress(path)).publicKey;
 
         // Resolve flags
-        let bounceable = true;
-        let chain = 0;
-        let test = false;
-        let flags = 0x00;
-        if (opts && opts.bounceable !== undefined && !opts.bounceable) {
-            flags |= 0x01;
-            bounceable = false;
-        }
-        if (opts && opts.testOnly) {
-            flags |= 0x02;
-            test = true;
-        }
-        if (opts && opts.chain !== undefined) {
-            if (opts.chain !== 0 && opts.chain !== -1) {
-                throw Error('Invalid chain');
-            }
-            chain = opts.chain;
-            if (opts.chain === -1) {
-                flags |= 0x04;
-            }
-        }
+        const { flags } = processAddressFlags(opts);
 
         const domainBuf = Buffer.from(params.domain, 'utf-8');
         const reqBuf = Buffer.concat([
