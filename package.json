@@ -1,6 +1,6 @@
 {
   "name": "@ton-community/ton-ledger",
-  "version": "4.0.1",
+  "version": "4.1.0",
   "repository": "https://github.com/ton-community/ton-ledger-ts",
   "author": "Steve Korshakov <steve@korshakov.com>",
   "license": "MIT",

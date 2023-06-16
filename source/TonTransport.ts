@@ -9,13 +9,19 @@ const LEDGER_SYSTEM = 0xB0;
 const LEDGER_CLA = 0xe0;
 const INS_VERSION = 0x03;
 const INS_ADDRESS = 0x05;
+const INS_SIGN_TX = 0x06;
 const INS_PROOF = 0x08;
+const INS_SIGN_DATA = 0x09;
 
 export type TonPayloadFormat =
     | { type: 'unsafe', message: Cell }
     | { type: 'comment', text: string }
     | { type: 'jetton-transfer', queryId: bigint | null, amount: bigint, decimals: number, ticker: string, destination: Address, responseDestination: Address, customPayload: Cell | null, forwardAmount: bigint, forwardPayload: Cell | null }
     | { type: 'nft-transfer', queryId: bigint | null, newOwner: Address, responseDestination: Address, customPayload: Cell | null, forwardAmount: bigint, forwardPayload: Cell | null }
+
+export type SignDataRequest =
+    | { type: 'plaintext', text: string }
+    | { type: 'app-data', address?: Address, domain?: string, data: Cell, ext?: Cell }
 
 function chunks(buf: Buffer, n: number): Buffer[] {
     const nc = Math.ceil(buf.length / n);
@@ -160,6 +166,109 @@ export class TonTransport {
         }
 
         return { signature, hash };
+    }
+
+    async signData(path: number[], req: SignDataRequest, opts?: { timestamp?: number }) {
+        validatePath(path);
+
+        const publicKey = (await this.getAddress(path)).publicKey;
+
+        const timestamp = opts?.timestamp ?? Math.floor(Date.now() / 1000)
+
+        let schema: number
+        let data: Buffer
+        let cell: Cell
+        switch (req.type) {
+            case 'plaintext': {
+                schema = 0x754bf91b;
+                data = Buffer.from(req.text, 'ascii');
+                cell = beginCell().storeStringTail(req.text).endCell();
+                break;
+            }
+            case 'app-data': {
+                if (req.address === undefined && req.domain === undefined) {
+                    throw new Error('At least one of `address` and `domain` must be set when using \'app-data\' request');
+                }
+                schema = 0x54b58535;
+                let b = beginCell();
+                let dp: Buffer[] = [];
+
+                if (req.address !== undefined) {
+                    b.storeBit(1);
+                    b.storeAddress(req.address);
+                    dp.push(writeUint8(1), writeAddress(req.address));
+                } else {
+                    b.storeBit(0);
+                    dp.push(writeUint8(0));
+                }
+
+                if (req.domain !== undefined) {
+                    b.storeBit(1);
+                    let inner = beginCell();
+                    req.domain.split('.').reverse().forEach(p => {
+                        inner.storeBuffer(Buffer.from(p, 'ascii'));
+                        inner.storeUint(0, 8);
+                    });
+                    b.storeRef(inner);
+                    const db = Buffer.from(req.domain, 'ascii');
+                    dp.push(writeUint8(1), writeUint8(db.length), db);
+                } else {
+                    b.storeBit(0);
+                    dp.push(writeUint8(0));
+                }
+
+                b.storeRef(req.data);
+                dp.push(writeCellRef(req.data));
+
+                if (req.ext !== undefined) {
+                    b.storeBit(1);
+                    b.storeRef(req.ext);
+                    dp.push(writeUint8(1), writeCellRef(req.ext));
+                } else {
+                    b.storeBit(0);
+                    dp.push(writeUint8(0));
+                }
+
+                data = Buffer.concat(dp);
+                cell = b.endCell();
+                break;
+            }
+            default: {
+                throw new Error(`Sign data request type '${(req as any).type}' not supported`)
+            }
+        }
+
+        const commonPart = Buffer.concat([
+            writeUint32(schema),
+            writeUint64(BigInt(timestamp)),
+        ]);
+
+        const pkg = Buffer.concat([
+            commonPart,
+            data,
+        ])
+
+        await this.#doRequest(INS_SIGN_DATA, 0x00, 0x03, pathElementsToBuffer(path.map((v) => v + 0x80000000)));
+        const pkgCs = chunks(pkg, 255);
+        for (let i = 0; i < pkgCs.length - 1; i++) {
+            await this.#doRequest(INS_SIGN_DATA, 0x00, 0x02, pkgCs[i]);
+        }
+        const res = await this.#doRequest(INS_SIGN_DATA, 0x00, 0x00, pkgCs[pkgCs.length-1]);
+
+        let signature = res.subarray(1, 1 + 64);
+        let hash = res.subarray(2 + 64, 2 + 64 + 32);
+        if (!hash.equals(cell.hash())) {
+            throw Error('Hash mismatch. Expected: ' + cell.hash().toString('hex') + ', got: ' + hash.toString('hex'));
+        }
+        if (!signVerify(Buffer.concat([commonPart, hash]), signature, publicKey)) {
+            throw Error('Received signature is invalid');
+        }
+
+        return {
+            signature,
+            cell,
+            timestamp,
+        }
     }
 
     signTransaction = async (
@@ -327,12 +436,12 @@ export class TonTransport {
         // Send package
         //
 
-        await this.#doRequest(0x06, 0x00, 0x03, pathElementsToBuffer(path.map((v) => v + 0x80000000)));
+        await this.#doRequest(INS_SIGN_TX, 0x00, 0x03, pathElementsToBuffer(path.map((v) => v + 0x80000000)));
         const pkgCs = chunks(pkg, 255);
         for (let i = 0; i < pkgCs.length - 1; i++) {
-            await this.#doRequest(0x06, 0x00, 0x02, pkgCs[i]);
+            await this.#doRequest(INS_SIGN_TX, 0x00, 0x02, pkgCs[i]);
         }
-        let res = await this.#doRequest(0x06, 0x00, 0x00, pkgCs[pkgCs.length-1]);
+        let res = await this.#doRequest(INS_SIGN_TX, 0x00, 0x00, pkgCs[pkgCs.length-1]);
 
         //
         // Parse response
