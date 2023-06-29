@@ -16,7 +16,7 @@ const INS_SIGN_DATA = 0x09;
 export type TonPayloadFormat =
     | { type: 'unsafe', message: Cell }
     | { type: 'comment', text: string }
-    | { type: 'jetton-transfer', queryId: bigint | null, amount: bigint, decimals: number, ticker: string, destination: Address, responseDestination: Address, customPayload: Cell | null, forwardAmount: bigint, forwardPayload: Cell | null }
+    | { type: 'jetton-transfer', queryId: bigint | null, amount: bigint, destination: Address, responseDestination: Address, customPayload: Cell | null, forwardAmount: bigint, forwardPayload: Cell | null }
     | { type: 'nft-transfer', queryId: bigint | null, newOwner: Address, responseDestination: Address, customPayload: Cell | null, forwardAmount: bigint, forwardPayload: Cell | null }
 
 export type SignDataRequest =
@@ -371,8 +371,6 @@ export class TonTransport {
                 if (transaction.payload.type === 'jetton-transfer') {
                     d = Buffer.concat([d, writeVarUInt(transaction.payload.amount)]);
                     b = b.storeCoins(transaction.payload.amount);
-
-                    d = Buffer.concat([d, writeUint8(transaction.payload.decimals), writeUint8(transaction.payload.ticker.length), Buffer.from(transaction.payload.ticker, 'ascii')]);
 
                     d = Buffer.concat([d, writeAddress(transaction.payload.destination)]);
                     b = b.storeAddress(transaction.payload.destination);
