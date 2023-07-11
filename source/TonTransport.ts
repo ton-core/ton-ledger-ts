@@ -14,7 +14,6 @@ const INS_PROOF = 0x08;
 const INS_SIGN_DATA = 0x09;
 
 export type TonPayloadFormat =
-    | { type: 'unsafe', message: Cell }
     | { type: 'comment', text: string }
     | { type: 'jetton-transfer', queryId: bigint | null, amount: bigint, destination: Address, responseDestination: Address, customPayload: Cell | null, forwardAmount: bigint, forwardPayload: Cell | null }
     | { type: 'nft-transfer', queryId: bigint | null, newOwner: Address, responseDestination: Address, customPayload: Cell | null, forwardAmount: bigint, forwardPayload: Cell | null }
@@ -348,8 +347,6 @@ export class TonTransport {
                     .storeUint(0, 32)
                     .storeBuffer(Buffer.from(transaction.payload.text))
                     .endCell()
-            } else if (transaction.payload.type === 'unsafe') {
-                payload = transaction.payload.message;
             } else if (transaction.payload.type === 'jetton-transfer' || transaction.payload.type === 'nft-transfer') {
                 hints = Buffer.concat([
                     writeUint8(1),
