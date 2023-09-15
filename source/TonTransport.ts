@@ -1,6 +1,6 @@
 import Transport from "@ledgerhq/hw-transport";
-import { Address, beginCell, Cell, contractAddress, SendMode, StateInit, storeStateInit } from "ton-core";
-import { signVerify } from 'ton-crypto';
+import { Address, beginCell, Cell, contractAddress, SendMode, StateInit, storeStateInit } from "@ton/core";
+import { signVerify } from '@ton/crypto';
 import { AsyncLock } from 'teslabot';
 import { writeAddress, writeCellRef, writeUint16, writeUint32, writeUint64, writeUint8, writeVarUInt } from "./utils/ledgerWriter";
 import { getInit } from "./utils/getInit";

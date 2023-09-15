@@ -1,5 +1,4 @@
-import { Address, Cell } from 'ton-core';
-import { beginCell } from 'ton-core';
+import { Address, Cell, beginCell } from '@ton/core';
 
 export function writeUint32(value: number) {
     let b = Buffer.alloc(4);

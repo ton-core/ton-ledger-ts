@@ -1,5 +1,5 @@
 import TransportNodeHid from "@ledgerhq/hw-transport-node-hid";
-import { Address, Cell, toNano } from "ton";
+import { Address, Cell, toNano } from "@ton/core";
 import { TonTransport } from "../source";
 
 (async () => {
