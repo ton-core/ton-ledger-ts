@@ -7,7 +7,7 @@ This library allows you to connect to a ledger device and with with TON from bro
 To add library to your project execute: 
 
 ```bash
-yarn add ton-ledger
+yarn add @ton-community/ton-ledger
 ```
 
 ## Connecting to a Device
