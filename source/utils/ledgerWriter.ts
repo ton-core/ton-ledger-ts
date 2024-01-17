@@ -17,7 +17,7 @@ export function writeUint64(value: bigint) {
 }
 
 export function writeVarUInt(value: bigint) {
-    const sizeBytes = Math.ceil((value.toString(2).length) / 8);
+    const sizeBytes = value === 0n ? 0 : Math.ceil((value.toString(2).length) / 8);
     return beginCell().storeUint(sizeBytes, 8).storeUint(value, sizeBytes * 8).endCell().beginParse().loadBuffer(1 + sizeBytes);
 }
 
