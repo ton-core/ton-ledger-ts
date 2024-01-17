@@ -7,7 +7,7 @@ This library allows you to connect to a ledger device and with with TON from bro
 To add library to your project execute: 
 
 ```bash
-yarn add ton-ledger
+yarn add @ton-community/ton-ledger
 ```
 
 ## Connecting to a Device
@@ -29,7 +29,7 @@ React Native:
 
 After connecting to a device create a TonTransport instance:
 ```typescript
-import { TonTransport } from 'ton-ledger';
+import { TonTransport } from '@ton-community/ton-ledger';
 let transport = new TonTransport(device);
 ```
 
@@ -83,7 +83,7 @@ Ledger Nanoapp works with Wallet v4 for now, we recommend you to continue to use
 
 ```typescript
 import { WalletV4Contract, WalletV4Source } from 'ton';
-import { TonPayloadFormat } from 'ton-ledger';
+import { TonPayloadFormat } from '@ton-community/ton-ledger';
 import { TonClient, Address, SendMode, toNano } from 'ton-core';
 
 let client = new TonClient({ endpoint: 'https://toncenter.com/api/v2/jsonRPC' });
