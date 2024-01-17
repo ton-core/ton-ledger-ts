@@ -1,4 +1,4 @@
-import { Address, beginCell } from 'ton-core';
+import { Address, beginCell } from '@ton/core';
 import { writeAddress, writeCellRef, writeUint16, writeUint32, writeUint64, writeUint8 } from "./ledgerWriter";
 
 describe('ledgerWriter', () => {

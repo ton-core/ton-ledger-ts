@@ -7,7 +7,7 @@ This library allows you to connect to a ledger device and with with TON from bro
 To add library to your project execute: 
 
 ```bash
-yarn add ton-ledger
+yarn add @ton-community/ton-ledger
 ```
 
 ## Connecting to a Device
@@ -29,7 +29,7 @@ React Native:
 
 After connecting to a device create a TonTransport instance:
 ```typescript
-import { TonTransport } from 'ton-ledger';
+import { TonTransport } from '@ton-community/ton-ledger';
 let transport = new TonTransport(device);
 ```
 
@@ -83,7 +83,7 @@ Ledger Nanoapp works with Wallet v4 for now, we recommend you to continue to use
 
 ```typescript
 import { WalletV4Contract, WalletV4Source } from 'ton';
-import { TonPayloadFormat } from 'ton-ledger';
+import { TonPayloadFormat } from '@ton-community/ton-ledger';
 import { TonClient, Address, SendMode, toNano } from 'ton-core';
 
 let client = new TonClient({ endpoint: 'https://toncenter.com/api/v2/jsonRPC' });
@@ -118,28 +118,42 @@ await c.sendExternalMessage(contract, signed);
 
 ## Payload formats
 
-Usually you want to perform transactions with some payload. Ledger's NanoApp currently supports 2 stable commands, all other are outdated or unstable:
-
 ### Transaction with a comment
 Comments are limited to ASCII-only symbols and 127 letters. Anything above would be automatically downgraded to Blind Signing Mode that you want to avoid at all cost.
 
 ```typescript
-let payload: TonPayloadFormat = {
+const payload: TonPayloadFormat = {
     type: 'comment',
     text: 'Deposit'
 };
 ```
 
-### Unsafe with custom payload
-
-This payload allows you to send arbitrary message, this is considered as Blind Signing Mode and only hash of your transaction would be shown to a user.
+### Jetton transfer
 
 ```typescript
-let cell: Cell = ...
-let message = new CellMessage(cell);
-let payload: TonPayloadFormat = {
-    type: 'unsafe',
-    message
+const payload: TonPayloadFormat = {
+    type: 'jetton-transfer',
+    queryId: null, // null will be replaced with 0; you can pass any value of the BigInt type
+    amount: 1n,
+    destination: Address.parse('EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c'),
+    responseDestination: Address.parse('EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c'),
+    customPayload: null, // you can pass any value of the Cell type
+    forwardAmount: 0n,
+    forwardPayload: null // you can pass any value of the Cell type
+};
+```
+
+### NFT transfer
+
+```typescript
+const payload: TonPayloadFormat = {
+    type: 'nft-transfer',
+    queryId: null, // null will be replaced with 0; you can pass any value of the BigInt type
+    newOwner: Address.parse('EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c'),
+    responseDestination: Address.parse('EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c'),
+    customPayload: null, // you can pass any value of the Cell type
+    forwardAmount: 0n,
+    forwardPayload: null // you can pass any value of the Cell type
 };
 ```
 

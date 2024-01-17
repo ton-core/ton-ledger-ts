@@ -1,5 +1,4 @@
-import { Address, Cell } from 'ton-core';
-import { beginCell } from 'ton-core';
+import { Address, Cell, beginCell } from '@ton/core';
 
 export function writeUint32(value: number) {
     let b = Buffer.alloc(4);
@@ -15,6 +14,11 @@ export function writeUint16(value: number) {
 
 export function writeUint64(value: bigint) {
     return beginCell().storeUint(value, 64).endCell().beginParse().loadBuffer(8);
+}
+
+export function writeVarUInt(value: bigint) {
+    const sizeBytes = value === 0n ? 0 : Math.ceil((value.toString(2).length) / 8);
+    return beginCell().storeUint(sizeBytes, 8).storeUint(value, sizeBytes * 8).endCell().beginParse().loadBuffer(1 + sizeBytes);
 }
 
 export function writeUint8(value: number) {

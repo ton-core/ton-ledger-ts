@@ -1,27 +1,51 @@
 import Transport from "@ledgerhq/hw-transport";
-import { Address, beginCell, Cell, contractAddress, Message, SendMode, StateInit, storeStateInit } from "ton-core";
-import { sha256, signVerify } from 'ton-crypto';
+import { Address, beginCell, Cell, contractAddress, SendMode, StateInit, storeStateInit } from "@ton/core";
+import { signVerify } from '@ton/crypto';
 import { AsyncLock } from 'teslabot';
-import { writeAddress, writeCellRef, writeUint16, writeUint32, writeUint64, writeUint8 } from "./utils/ledgerWriter";
+import { writeAddress, writeCellRef, writeUint16, writeUint32, writeUint64, writeUint8, writeVarUInt } from "./utils/ledgerWriter";
 import { getInit } from "./utils/getInit";
 
 const LEDGER_SYSTEM = 0xB0;
 const LEDGER_CLA = 0xe0;
 const INS_VERSION = 0x03;
 const INS_ADDRESS = 0x05;
+const INS_SIGN_TX = 0x06;
+const INS_PROOF = 0x08;
+const INS_SIGN_DATA = 0x09;
 
 export type TonPayloadFormat =
-    | { type: 'unsafe', message: Cell }
     | { type: 'comment', text: string }
-    | { type: 'upgrade', queryId: bigint | null, gasLimit: bigint | null, code: Cell }
-    | { type: 'deposit', queryId: bigint | null, gasLimit: bigint | null }
-    | { type: 'withdraw', queryId: bigint | null, gasLimit: bigint | null, amount: bigint }
-    | { type: 'transfer-ownership', queryId: bigint | null, address: Address }
-    | { type: 'create-proposal', queryId: bigint | null, id: number | null, proposal: Cell, metadata: Cell }
-    | { type: 'vote-proposal', queryId: bigint | null, id: number, vote: 'yes' | 'no' | 'abstain' }
-    | { type: 'execute-proposal', queryId: bigint | null, id: number }
-    | { type: 'abort-proposal', queryId: bigint | null, id: number }
-    | { type: 'change-address', queryId: bigint | null, gasLimit: bigint | null, index: number, address: Address }
+    | { type: 'jetton-transfer', queryId: bigint | null, amount: bigint, destination: Address, responseDestination: Address, customPayload: Cell | null, forwardAmount: bigint, forwardPayload: Cell | null }
+    | { type: 'nft-transfer', queryId: bigint | null, newOwner: Address, responseDestination: Address, customPayload: Cell | null, forwardAmount: bigint, forwardPayload: Cell | null }
+
+export type SignDataRequest =
+    | { type: 'plaintext', text: string }
+    | { type: 'app-data', address?: Address, domain?: string, data: Cell, ext?: Cell }
+
+function chunks(buf: Buffer, n: number): Buffer[] {
+    const nc = Math.ceil(buf.length / n);
+    const cs: Buffer[] = [];
+    for (let i = 0; i < nc; i++) {
+        cs.push(buf.subarray(i * n, (i + 1) * n));
+    }
+    return cs;
+}
+
+function processAddressFlags(opts?: { testOnly?: boolean, bounceable?: boolean, chain?: number }): { testOnly: boolean, bounceable: boolean, chain: number, flags: number } {
+    const bounceable = opts?.bounceable ?? true;
+    const testOnly = opts?.testOnly ?? false;
+    const chain = opts?.chain ?? 0;
+
+    let flags = 0x00;
+    if (testOnly) {
+        flags |= 0x01;
+    }
+    if (chain === -1) {
+        flags |= 0x02;
+    }
+
+    return { bounceable, testOnly, chain, flags };
+}
 
 export class TonTransport {
     readonly transport: Transport;
@@ -77,27 +101,7 @@ export class TonTransport {
         validatePath(path);
 
         // Resolve flags
-        let bounceable = true;
-        let chain = 0;
-        let test = false;
-        let flags = 0x00;
-        if (opts && opts.bounceable !== undefined && !opts.bounceable) {
-            flags |= 0x01;
-            bounceable = false;
-        }
-        if (opts && opts.testOnly) {
-            flags |= 0x02;
-            test = true;
-        }
-        if (opts && opts.chain !== undefined) {
-            if (opts.chain !== 0 && opts.chain !== -1) {
-                throw Error('Invalid chain');
-            }
-            chain = opts.chain;
-            if (opts.chain === -1) {
-                flags |= 0x04;
-            }
-        }
+        const { bounceable, testOnly, chain } = processAddressFlags(opts);
 
         // Get public key
         let response = await this.#doRequest(INS_ADDRESS, 0x00, 0x00, pathElementsToBuffer(path.map((v) => v + 0x80000000)));
@@ -109,7 +113,7 @@ export class TonTransport {
         const contract = getInit(chain, response);
         const address = contractAddress(chain, contract);
 
-        return { address: address.toString({ bounceable: bounceable, testOnly: test }), publicKey: response };
+        return { address: address.toString({ bounceable, testOnly }), publicKey: response };
     }
 
     async validateAddress(path: number[], opts?: { testOnly?: boolean, bounceable?: boolean, chain?: number }) {
@@ -118,27 +122,7 @@ export class TonTransport {
         validatePath(path);
 
         // Resolve flags
-        let bounceable = true;
-        let chain = 0;
-        let test = false;
-        let flags = 0x00;
-        if (opts && opts.bounceable !== undefined && !opts.bounceable) {
-            flags |= 0x01;
-            bounceable = false;
-        }
-        if (opts && opts.testOnly) {
-            flags |= 0x02;
-            test = true;
-        }
-        if (opts && opts.chain !== undefined) {
-            if (opts.chain !== 0 && opts.chain !== -1) {
-                throw Error('Invalid chain');
-            }
-            chain = opts.chain;
-            if (opts.chain === -1) {
-                flags |= 0x04;
-            }
-        }
+        const { bounceable, testOnly, chain, flags } = processAddressFlags(opts);
 
         // Get public key
         let response = await this.#doRequest(INS_ADDRESS, 0x01, flags, pathElementsToBuffer(path.map((v) => v + 0x80000000)));
@@ -150,7 +134,140 @@ export class TonTransport {
         const contract = getInit(chain, response);
         const address = contractAddress(chain, contract);
 
-        return { address: address.toString({ bounceable: bounceable, testOnly: test }), publicKey: response };
+        return { address: address.toString({ bounceable, testOnly }), publicKey: response };
+    }
+
+    async getAddressProof(path: number[], params: { domain: string, timestamp: number, payload: Buffer }, opts?: { testOnly?: boolean, bounceable?: boolean, chain?: number }) {
+
+        // Check path
+        validatePath(path);
+
+        let publicKey = (await this.getAddress(path)).publicKey;
+
+        // Resolve flags
+        const { flags } = processAddressFlags(opts);
+
+        const domainBuf = Buffer.from(params.domain, 'utf-8');
+        const reqBuf = Buffer.concat([
+            pathElementsToBuffer(path.map((v) => v + 0x80000000)),
+            writeUint8(domainBuf.length),
+            domainBuf,
+            writeUint64(BigInt(params.timestamp)),
+            params.payload,
+        ]);
+
+        // Get public key
+        let res = await this.#doRequest(INS_PROOF, 0x01, flags, reqBuf);
+        let signature = res.slice(1, 1 + 64);
+        let hash = res.slice(2 + 64, 2 + 64 + 32);
+        if (!signVerify(hash, signature, publicKey)) {
+            throw Error('Received signature is invalid');
+        }
+
+        return { signature, hash };
+    }
+
+    async signData(path: number[], req: SignDataRequest, opts?: { timestamp?: number }) {
+        validatePath(path);
+
+        const publicKey = (await this.getAddress(path)).publicKey;
+
+        const timestamp = opts?.timestamp ?? Math.floor(Date.now() / 1000)
+
+        let schema: number
+        let data: Buffer
+        let cell: Cell
+        switch (req.type) {
+            case 'plaintext': {
+                schema = 0x754bf91b;
+                data = Buffer.from(req.text, 'ascii');
+                cell = beginCell().storeStringTail(req.text).endCell();
+                break;
+            }
+            case 'app-data': {
+                if (req.address === undefined && req.domain === undefined) {
+                    throw new Error('At least one of `address` and `domain` must be set when using \'app-data\' request');
+                }
+                schema = 0x54b58535;
+                let b = beginCell();
+                let dp: Buffer[] = [];
+
+                if (req.address !== undefined) {
+                    b.storeBit(1);
+                    b.storeAddress(req.address);
+                    dp.push(writeUint8(1), writeAddress(req.address));
+                } else {
+                    b.storeBit(0);
+                    dp.push(writeUint8(0));
+                }
+
+                if (req.domain !== undefined) {
+                    b.storeBit(1);
+                    let inner = beginCell();
+                    req.domain.split('.').reverse().forEach(p => {
+                        inner.storeBuffer(Buffer.from(p, 'ascii'));
+                        inner.storeUint(0, 8);
+                    });
+                    b.storeRef(inner);
+                    const db = Buffer.from(req.domain, 'ascii');
+                    dp.push(writeUint8(1), writeUint8(db.length), db);
+                } else {
+                    b.storeBit(0);
+                    dp.push(writeUint8(0));
+                }
+
+                b.storeRef(req.data);
+                dp.push(writeCellRef(req.data));
+
+                if (req.ext !== undefined) {
+                    b.storeBit(1);
+                    b.storeRef(req.ext);
+                    dp.push(writeUint8(1), writeCellRef(req.ext));
+                } else {
+                    b.storeBit(0);
+                    dp.push(writeUint8(0));
+                }
+
+                data = Buffer.concat(dp);
+                cell = b.endCell();
+                break;
+            }
+            default: {
+                throw new Error(`Sign data request type '${(req as any).type}' not supported`)
+            }
+        }
+
+        const commonPart = Buffer.concat([
+            writeUint32(schema),
+            writeUint64(BigInt(timestamp)),
+        ]);
+
+        const pkg = Buffer.concat([
+            commonPart,
+            data,
+        ])
+
+        await this.#doRequest(INS_SIGN_DATA, 0x00, 0x03, pathElementsToBuffer(path.map((v) => v + 0x80000000)));
+        const pkgCs = chunks(pkg, 255);
+        for (let i = 0; i < pkgCs.length - 1; i++) {
+            await this.#doRequest(INS_SIGN_DATA, 0x00, 0x02, pkgCs[i]);
+        }
+        const res = await this.#doRequest(INS_SIGN_DATA, 0x00, 0x00, pkgCs[pkgCs.length-1]);
+
+        let signature = res.subarray(1, 1 + 64);
+        let hash = res.subarray(2 + 64, 2 + 64 + 32);
+        if (!hash.equals(cell.hash())) {
+            throw Error('Hash mismatch. Expected: ' + cell.hash().toString('hex') + ', got: ' + hash.toString('hex'));
+        }
+        if (!signVerify(Buffer.concat([commonPart, hash]), signature, publicKey)) {
+            throw Error('Received signature is invalid');
+        }
+
+        return {
+            signature,
+            cell,
+            timestamp,
+        }
     }
 
     signTransaction = async (
@@ -184,7 +301,7 @@ export class TonTransport {
             writeUint8(0), // Header
             writeUint32(transaction.seqno),
             writeUint32(transaction.timeout),
-            writeUint64(transaction.amount),
+            writeVarUInt(transaction.amount),
             writeAddress(transaction.to),
             writeUint8(transaction.bounce ? 1 : 0),
             writeUint8(transaction.sendMode),
@@ -230,337 +347,57 @@ export class TonTransport {
                     .storeUint(0, 32)
                     .storeBuffer(Buffer.from(transaction.payload.text))
                     .endCell()
-            } else if (transaction.payload.type === 'unsafe') {
-                payload = transaction.payload.message;
-            } else if (transaction.payload.type === 'upgrade') {
+            } else if (transaction.payload.type === 'jetton-transfer' || transaction.payload.type === 'nft-transfer') {
                 hints = Buffer.concat([
                     writeUint8(1),
-                    writeUint32(0x01)
+                    writeUint32(transaction.payload.type === 'jetton-transfer' ? 0x01 : 0x02)
                 ]);
 
-
-                // Build cells and hints
                 let b = beginCell()
-                    .storeUint(0xdbfaf817, 32);
+                    .storeUint(transaction.payload.type === 'jetton-transfer' ? 0x0f8a7ea5 : 0x5fcc3d14, 32);
                 let d = Buffer.alloc(0);
 
-                // Query ID
                 if (transaction.payload.queryId !== null) {
                     d = Buffer.concat([d, writeUint8(1), writeUint64(transaction.payload.queryId)]);
                     b = b.storeUint(transaction.payload.queryId, 64);
                 } else {
                     d = Buffer.concat([d, writeUint8(0)]);
+                    b = b.storeUint(0, 64);
                 }
 
-                // Gas Limit
-                if (transaction.payload.gasLimit !== null) {
-                    d = Buffer.concat([d, writeUint8(1), writeUint64(transaction.payload.gasLimit)]);
-                    b = b.storeCoins(transaction.payload.gasLimit);
+                if (transaction.payload.type === 'jetton-transfer') {
+                    d = Buffer.concat([d, writeVarUInt(transaction.payload.amount)]);
+                    b = b.storeCoins(transaction.payload.amount);
+
+                    d = Buffer.concat([d, writeAddress(transaction.payload.destination)]);
+                    b = b.storeAddress(transaction.payload.destination);
+                } else {
+                    d = Buffer.concat([d, writeAddress(transaction.payload.newOwner)]);
+                    b = b.storeAddress(transaction.payload.newOwner);
+                }
+
+                d = Buffer.concat([d, writeAddress(transaction.payload.responseDestination)]);
+                b = b.storeAddress(transaction.payload.responseDestination);
+
+                if (transaction.payload.customPayload !== null) {
+                    d = Buffer.concat([d, writeUint8(1), writeCellRef(transaction.payload.customPayload)]);
+                    b = b.storeMaybeRef(transaction.payload.customPayload);
                 } else {
                     d = Buffer.concat([d, writeUint8(0)]);
+                    b = b.storeMaybeRef(transaction.payload.customPayload);
                 }
 
-                // Complete
-                d = Buffer.concat([d,
-                    writeUint16(transaction.payload.code.depth()),
-                    transaction.payload.code.hash()
-                ]);
-                payload = b.storeRef(transaction.payload.code).endCell();
-                hints = Buffer.concat([
-                    hints,
-                    writeUint16(d.length),
-                    d
-                ])
-            } else if (transaction.payload.type === 'deposit') {
-                hints = Buffer.concat([
-                    writeUint8(1),
-                    writeUint32(0x02)
-                ]);
+                d = Buffer.concat([d, writeVarUInt(transaction.payload.forwardAmount)]);
+                b = b.storeCoins(transaction.payload.forwardAmount);
 
-                // Build cells and hints
-                let b = beginCell()
-                    .storeUint(0x7bcd1fef, 32);
-                let d = Buffer.alloc(0);
-
-                // Query ID
-                if (transaction.payload.queryId !== null) {
-                    d = Buffer.concat([d, writeUint8(1), writeUint64(transaction.payload.queryId)]);
-                    b = b.storeUint(transaction.payload.queryId, 64);
+                if (transaction.payload.forwardPayload !== null) {
+                    d = Buffer.concat([d, writeUint8(1), writeCellRef(transaction.payload.forwardPayload)]);
+                    b = b.storeMaybeRef(transaction.payload.forwardPayload);
                 } else {
                     d = Buffer.concat([d, writeUint8(0)]);
+                    b = b.storeMaybeRef(transaction.payload.forwardPayload);
                 }
 
-                // Gas Limit
-                if (transaction.payload.gasLimit !== null) {
-                    d = Buffer.concat([d, writeUint8(1), writeUint64(transaction.payload.gasLimit)]);
-                    b = b.storeCoins(transaction.payload.gasLimit);
-                } else {
-                    d = Buffer.concat([d, writeUint8(0)]);
-                }
-
-                payload = b.endCell();
-                hints = Buffer.concat([
-                    hints,
-                    writeUint16(d.length),
-                    d
-                ])
-            } else if (transaction.payload.type === 'withdraw') {
-                hints = Buffer.concat([
-                    writeUint8(1),
-                    writeUint32(0x03)
-                ]);
-
-                // Build cells and hints
-                let b = beginCell()
-                    .storeUint(0xda803efd, 32);
-                let d = Buffer.alloc(0);
-
-                // Query ID
-                if (transaction.payload.queryId !== null) {
-                    d = Buffer.concat([d, writeUint8(1), writeUint64(transaction.payload.queryId)]);
-                    b = b.storeUint(transaction.payload.queryId, 64);
-                } else {
-                    d = Buffer.concat([d, writeUint8(0)]);
-                }
-
-                // Gas Limit
-                if (transaction.payload.gasLimit !== null) {
-                    d = Buffer.concat([d, writeUint8(1), writeUint64(transaction.payload.gasLimit)]);
-                    b = b.storeCoins(transaction.payload.gasLimit);
-                } else {
-                    d = Buffer.concat([d, writeUint8(0)]);
-                }
-
-                // Amount
-                d = Buffer.concat([d, writeUint64(transaction.payload.amount)]);
-                b = b.storeCoins(transaction.payload.amount);
-
-                // Complete
-                payload = b.endCell();
-                hints = Buffer.concat([
-                    hints,
-                    writeUint16(d.length),
-                    d
-                ])
-            } else if (transaction.payload.type === 'transfer-ownership') {
-                hints = Buffer.concat([
-                    writeUint8(1),
-                    writeUint32(0x04)
-                ]);
-
-                // Build cells and hints
-                let b = beginCell()
-                    .storeUint(0x295e75a9, 32);
-                let d = Buffer.alloc(0);
-
-                // Query ID
-                if (transaction.payload.queryId !== null) {
-                    d = Buffer.concat([d, writeUint8(1), writeUint64(transaction.payload.queryId)]);
-                    b = b.storeUint(transaction.payload.queryId, 64);
-                } else {
-                    d = Buffer.concat([d, writeUint8(0)]);
-                }
-
-                // Address
-                d = Buffer.concat([d,
-                    writeAddress(transaction.payload.address),
-                ]);
-                b = b.storeAddress(transaction.payload.address);
-
-                // Complete
-                payload = b.endCell();
-                hints = Buffer.concat([
-                    hints,
-                    writeUint16(d.length),
-                    d
-                ])
-            } else if (transaction.payload.type === 'create-proposal') {
-                hints = Buffer.concat([
-                    writeUint8(1),
-                    writeUint32(0x05)
-                ]);
-
-                // Build cells and hints
-                let b = beginCell()
-                    .storeUint(0xc1387443, 32);
-                let d = Buffer.alloc(0);
-
-                // Query ID
-                if (transaction.payload.queryId !== null) {
-                    d = Buffer.concat([d, writeUint8(1), writeUint64(transaction.payload.queryId)]);
-                    b = b.storeUint(transaction.payload.queryId, 64);
-                } else {
-                    d = Buffer.concat([d, writeUint8(0)]);
-                }
-
-                // Proposal ID
-                if (transaction.payload.id !== null) {
-                    d = Buffer.concat([d, writeUint8(1), writeUint32(transaction.payload.id)]);
-                    b = b.storeUint(transaction.payload.id, 32);
-                } else {
-                    d = Buffer.concat([d, writeUint8(0)]);
-                }
-
-                // Proposal
-                d = Buffer.concat([d,
-                    writeCellRef(transaction.payload.proposal)
-                ]);
-                b = b.storeRef(transaction.payload.proposal);
-
-                // Proposal
-                d = Buffer.concat([d,
-                    writeCellRef(transaction.payload.metadata)
-                ]);
-                b = b.storeRef(transaction.payload.metadata);
-
-                // Complete
-                payload = b.endCell();
-                hints = Buffer.concat([
-                    hints,
-                    writeUint16(d.length),
-                    d
-                ]);
-            } else if (transaction.payload.type === 'vote-proposal') {
-                hints = Buffer.concat([
-                    writeUint8(1),
-                    writeUint32(0x06)
-                ]);
-
-                // Build cells and hints
-                let b = beginCell()
-                    .storeUint(0xb5a563c1, 32);
-                let d = Buffer.alloc(0);
-
-                // Query ID
-                if (transaction.payload.queryId !== null) {
-                    d = Buffer.concat([d, writeUint8(1), writeUint64(transaction.payload.queryId)]);
-                    b = b.storeUint(transaction.payload.queryId, 64);
-                } else {
-                    d = Buffer.concat([d, writeUint8(0)]);
-                }
-
-                // ID
-                d = Buffer.concat([d, writeUint32(transaction.payload.id)]);
-                b = b.storeUint(transaction.payload.id, 32);
-
-                // Vote
-                let voteKey = 0x00;
-                if (transaction.payload.vote === 'yes') {
-                    voteKey = 0x01;
-                } else if (transaction.payload.vote === 'abstain') {
-                    voteKey = 0x02;
-                }
-
-                // Store
-                d = Buffer.concat([d, writeUint8(voteKey)]);
-                b = b.storeUint(voteKey, 2);
-
-                // Complete
-                payload = b.endCell();
-                hints = Buffer.concat([
-                    hints,
-                    writeUint16(d.length),
-                    d
-                ]);
-            } else if (transaction.payload.type === 'execute-proposal') {
-                hints = Buffer.concat([
-                    writeUint8(1),
-                    writeUint32(0x07)
-                ]);
-
-                // Build cells and hints
-                let b = beginCell()
-                    .storeUint(0x93ff9cd3, 32);
-                let d = Buffer.alloc(0);
-
-                // Query ID
-                if (transaction.payload.queryId !== null) {
-                    d = Buffer.concat([d, writeUint8(1), writeUint64(transaction.payload.queryId)]);
-                    b = b.storeUint(transaction.payload.queryId, 64);
-                } else {
-                    d = Buffer.concat([d, writeUint8(0)]);
-                }
-
-                // ID
-                d = Buffer.concat([d, writeUint32(transaction.payload.id)]);
-                b = b.storeUint(transaction.payload.id, 32);
-
-                // Complete
-                payload = b.endCell();
-                hints = Buffer.concat([
-                    hints,
-                    writeUint16(d.length),
-                    d
-                ]);
-            } else if (transaction.payload.type === 'abort-proposal') {
-                hints = Buffer.concat([
-                    writeUint8(1),
-                    writeUint32(0x08)
-                ]);
-
-                // Build cells and hints
-                let b = beginCell()
-                    .storeUint(0x5ce656a5, 32);
-                let d = Buffer.alloc(0);
-
-                // Query ID
-                if (transaction.payload.queryId !== null) {
-                    d = Buffer.concat([d, writeUint8(1), writeUint64(transaction.payload.queryId)]);
-                    b = b.storeUint(transaction.payload.queryId, 64);
-                } else {
-                    d = Buffer.concat([d, writeUint8(0)]);
-                }
-
-                // ID
-                d = Buffer.concat([d, writeUint32(transaction.payload.id)]);
-                b = b.storeUint(transaction.payload.id, 32);
-
-                // Complete
-                payload = b.endCell();
-                hints = Buffer.concat([
-                    hints,
-                    writeUint16(d.length),
-                    d
-                ]);
-            } else if (transaction.payload.type === 'change-address') {
-                hints = Buffer.concat([
-                    writeUint8(1),
-                    writeUint32(0x09)
-                ]);
-
-                // Build cells and hints
-                let b = beginCell()
-                    .storeUint(0x90eafae1, 32);
-                let d = Buffer.alloc(0);
-
-                // Query ID
-                if (transaction.payload.queryId !== null) {
-                    d = Buffer.concat([d, writeUint8(1), writeUint64(transaction.payload.queryId)]);
-                    b = b.storeUint(transaction.payload.queryId, 64);
-                } else {
-                    d = Buffer.concat([d, writeUint8(0)]);
-                }
-
-                // Gas Limit
-                if (transaction.payload.gasLimit !== null) {
-                    d = Buffer.concat([d, writeUint8(1), writeUint64(transaction.payload.gasLimit)]);
-                    b = b.storeCoins(transaction.payload.gasLimit);
-                } else {
-                    d = Buffer.concat([d, writeUint8(0)]);
-                }
-
-                // Index
-                d = Buffer.concat([d,
-                    writeUint8(transaction.payload.index)]);
-                b = b.storeUint(transaction.payload.index, 8);
-
-                // Address
-                d = Buffer.concat([d,
-                    writeAddress(transaction.payload.address),
-                ]);
-                b = b.storeAddress(transaction.payload.address);
-
-                // Complete
                 payload = b.endCell();
                 hints = Buffer.concat([
                     hints,
@@ -594,8 +431,12 @@ export class TonTransport {
         // Send package
         //
 
-        await this.#doRequest(0x06, 0x00, 0x80, pathElementsToBuffer(path.map((v) => v + 0x80000000)));
-        let res = await this.#doRequest(0x06, 0x01, 0x00, pkg);
+        await this.#doRequest(INS_SIGN_TX, 0x00, 0x03, pathElementsToBuffer(path.map((v) => v + 0x80000000)));
+        const pkgCs = chunks(pkg, 255);
+        for (let i = 0; i < pkgCs.length - 1; i++) {
+            await this.#doRequest(INS_SIGN_TX, 0x00, 0x02, pkgCs[i]);
+        }
+        let res = await this.#doRequest(INS_SIGN_TX, 0x00, 0x00, pkgCs[pkgCs.length-1]);
 
         //
         // Parse response
@@ -661,33 +502,6 @@ export class TonTransport {
             .storeBuffer(signature)
             .storeSlice(transfer.beginParse())
             .endCell();
-    }
-
-    signMessage = async (path: number[], text: string) => {
-
-        // Check path
-        validatePath(path);
-
-        //
-        // Fetch key
-        //
-
-        let publicKey = (await this.getAddress(path)).publicKey;
-
-        // Send request
-        let pkg = Buffer.from(text);
-        await this.#doRequest(0x07, 0x00, 0x80, pathElementsToBuffer(path.map((v) => v + 0x80000000)));
-        let res = await this.#doRequest(0x07, 0x01, 0x00, pkg);
-
-        // Check signature
-        let signature = res.slice(1, 1 + 64);
-        let intHash = Buffer.concat([Buffer.from([0x96, 0x89, 0x0e, 0x83]), await sha256(pkg)]);
-        let hash = res.slice(2 + 64, 2 + 64 + 36);
-        if (!signVerify(intHash, signature, publicKey)) {
-            throw Error('Received signature is invalid');
-        }
-
-        return signature;
     }
 
     #doRequest = async (ins: number, p1: number, p2: number, data: Buffer) => {
